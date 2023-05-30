@@ -1,22 +1,34 @@
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
+use rand::Rng;
+use serde::Deserialize;
 
-// use std::io::{stdout, Error, Write};
+#[derive(Debug, Deserialize, Resource)]
+struct Config {
+    questions: Vec<Question>,
+}
 
-// use crossterm::{
-//     cursor::{MoveTo, MoveToNextLine},
-//     queue,
-//     style::{Color, Print, ResetColor, SetBackgroundColor},
-//     terminal::{Clear, ClearType},
-// };
-
-struct PressedEvent(String);
+#[derive(Debug, Deserialize)]
+struct Question {
+    text: String,
+    actual: String,
+}
 
 fn main() {
+    let mut questions: Config = Config {
+        questions: Vec::new(),
+    };
+    // 从config/config.toml文件中读取配置
+    if let Ok(config) = std::fs::read_to_string("config/config.toml") {
+        questions = toml::from_str(&config).unwrap();
+        println!("{:?}", config);
+    }
+
     App::new()
         .add_plugins(DefaultPlugins)
         .add_plugin(EguiPlugin)
-        .add_event::<PressedEvent>()
+        .insert_resource(questions)
+        // .add_startup_system(spawn_question)
         .add_startup_system(spawn_question)
         .add_system(unspawn_question)
         .insert_resource(FixedTime::new_from_secs(1.0))
@@ -25,13 +37,21 @@ fn main() {
         .run();
 }
 
-fn spawn_question(mut commands: Commands, time: Res<Time>) {
+fn spawn_question(mut commands: Commands, time: Res<Time>, config: Res<Config>) {
     if (time.elapsed_seconds() as u32) % 5 == 0 {
+        let index: usize = rand::thread_rng().gen_range(0..config.questions.len()) as usize;
+
+        // 从 question 随机取出一条
+        let question = config.questions.get(index).unwrap();
+
         commands.spawn(QuestionBundle {
-            text: DisplayText("1+1=?".to_string()),
-            actual: QuestionActual("2".to_string()),
+            text: DisplayText(question.text.to_string()),
+            actual: QuestionActual(question.actual.to_string()),
             creation_time: CreationTime(time.elapsed_seconds() as u32),
         });
+
+        debug!("spawn question: {:?}", question);
+
     }
 }
 
@@ -44,15 +64,11 @@ fn unspawn_question(
     query: Query<(Entity, &QuestionActual)>,
 ) {
     for ev in char_evr.iter() {
-        println!("Got char: '{}'", ev.char);
         string.push(ev.char);
     }
 
     if keys.just_pressed(KeyCode::Return) {
-        println!("Got char: return , string = '{}'", string.as_str());
-
         for (entity, actual) in query.iter() {
-            println!("actual = '{}'", actual.0);
             if string.trim().eq(&actual.0) {
                 commands.entity(entity).despawn();
             }
