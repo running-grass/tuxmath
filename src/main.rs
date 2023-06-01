@@ -42,6 +42,10 @@ enum GameState {
     GameOver,
 }
 
+// 全局计时器
+#[derive(Debug, Default, Resource)]
+struct GlobalTimer(Timer);
+
 fn main() {
     let mut questions: Config = Config {
         questions: Vec::new(),
@@ -55,6 +59,7 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .add_plugin(EguiPlugin)
         .insert_resource(questions)
+        .insert_resource(GlobalTimer(Timer::from_seconds(5.0, TimerMode::Repeating)))
         .insert_resource(FixedTime::new_from_secs(1.0))
         .init_resource::<Store>()
         .add_state::<GameState>()
@@ -65,14 +70,14 @@ fn main() {
         .add_system(reset_entity.in_schedule(OnExit(GameState::GameOver)))
         // 游戏中的系统
         .add_systems(
-            (print_info, clean_question, unspawn_question, game_over)
+            (
+                spawn_question,
+                clean_question,
+                unspawn_question,
+                print_info,
+                game_over,
+            )
                 .in_set(OnUpdate(GameState::Playing)),
-        )
-        // 生成问题
-        .add_system(
-            spawn_question
-                .in_set(OnUpdate(GameState::Playing))
-                .in_schedule(CoreSchedule::FixedUpdate),
         )
         .run();
 }
@@ -80,17 +85,21 @@ fn main() {
 /**
  * 每五秒随机生成一个问题
  */
-fn spawn_question(mut commands: Commands, time: Res<Time>, config: Res<Config>) {
-    if (time.elapsed_seconds() as u32) % 5 == 0 {
+fn spawn_question(
+    mut commands: Commands,
+    time: Res<Time>,
+    config: Res<Config>,
+    mut global_timer: ResMut<GlobalTimer>,
+) {
+    if global_timer.0.tick(time.delta()).just_finished() {
         let index: usize = rand::thread_rng().gen_range(0..config.questions.len()) as usize;
-
         // 从 question 随机取出一条
         let question = config.questions.get(index).unwrap();
 
         commands.spawn(QuestionBundle {
             text: DisplayText(question.text.to_string()),
             actual: QuestionActual(question.actual.to_string()),
-            creation_time: CreationTime(time.elapsed_seconds() as u32),
+            timer: QuestionTimer(Timer::from_seconds(20.0, TimerMode::Once)),
         });
 
         debug!("spawn question: {:?}", question);
@@ -104,10 +113,10 @@ fn clean_question(
     mut commands: Commands,
     time: Res<Time>,
     mut score: ResMut<Store>,
-    query: Query<(Entity, &CreationTime)>,
+    mut query: Query<(Entity, &mut QuestionTimer)>,
 ) {
-    for (entity, creation) in query.iter() {
-        if time.elapsed_seconds() as u32 - creation.0 >= 20 {
+    for (entity, mut timer) in query.iter_mut() {
+        if timer.0.tick(time.delta()).just_finished() {
             commands.entity(entity).despawn();
             score.score -= 1;
         }
@@ -210,16 +219,15 @@ fn setup(mut contexts: EguiContexts) {
  */
 fn print_info(
     mut contexts: EguiContexts,
-    time: Res<Time>,
-    query: Query<(&DisplayText, &CreationTime)>,
+    query: Query<(&DisplayText, &QuestionTimer)>,
     score: Res<Store>,
 ) {
     egui::Window::new("问题列表").show(contexts.ctx_mut(), |ui| {
-        for (text, creation) in query.iter() {
+        for (text, timer) in query.iter() {
             ui.label(format!(
                 "question: [{}], have {} s",
                 text.0,
-                20 - (time.elapsed_seconds() as u32 - creation.0)
+                timer.0.remaining_secs() as i32
             ));
         }
     });
@@ -236,11 +244,11 @@ struct DisplayText(String);
 struct QuestionActual(String);
 
 #[derive(Component)]
-struct CreationTime(u32);
+struct QuestionTimer(Timer);
 
 #[derive(Bundle)]
 struct QuestionBundle {
     text: DisplayText,
     actual: QuestionActual,
-    creation_time: CreationTime,
+    timer: QuestionTimer,
 }
