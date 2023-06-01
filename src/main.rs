@@ -35,7 +35,7 @@ struct Store {
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Default, States)]
 enum GameState {
     #[default]
-    Menu,
+    MainMenu,
 
     Playing,
     Paused,
@@ -59,8 +59,8 @@ fn main() {
         .init_resource::<Store>()
         .add_state::<GameState>()
         .add_system(setup)
-        .add_startup_system(spawn_question)
-        .add_system(render_main_menu.in_set(OnUpdate(GameState::Menu)))
+        // .add_startup_system(spawn_question)
+        .add_system(render_main_menu.in_set(OnUpdate(GameState::MainMenu)))
         .add_system(render_game_over.in_set(OnUpdate(GameState::GameOver)))
         .add_system(reset_entity.in_schedule(OnExit(GameState::GameOver)))
         // 游戏中的系统
@@ -68,7 +68,12 @@ fn main() {
             (print_info, clean_question, unspawn_question, game_over)
                 .in_set(OnUpdate(GameState::Playing)),
         )
-        .add_system(spawn_question.in_schedule(CoreSchedule::FixedUpdate))
+        // 生成问题
+        .add_system(
+            spawn_question
+                .in_set(OnUpdate(GameState::Playing))
+                .in_schedule(CoreSchedule::FixedUpdate),
+        )
         .run();
 }
 
@@ -181,7 +186,7 @@ fn setup(mut contexts: EguiContexts) {
     let mut fonts = FontDefinitions::default();
 
     fonts.font_data.insert(
-        "mao_ken_wang_xing".to_owned(),
+        "si_yuan".to_owned(),
         FontData::from_static(include_bytes!("../assets/font/SourceHanSansCN-Normal.otf")),
     ); // .ttf and .otf supported
 
@@ -189,14 +194,14 @@ fn setup(mut contexts: EguiContexts) {
         .families
         .get_mut(&egui::FontFamily::Proportional)
         .unwrap()
-        .insert(0, "mao_ken_wang_xing".to_owned());
+        .insert(0, "si_yuan".to_owned());
 
     // Put my font as last fallback for monospace:
     fonts
         .families
         .get_mut(&egui::FontFamily::Monospace)
         .unwrap()
-        .push("mao_ken_wang_xing".to_owned());
+        .push("si_yuan".to_owned());
 
     contexts.ctx_mut().set_fonts(fonts);
 }
