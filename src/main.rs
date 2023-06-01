@@ -1,5 +1,8 @@
 use bevy::prelude::*;
-use bevy_egui::{egui, EguiContexts, EguiPlugin};
+use bevy_egui::{
+    egui::{self, FontData, FontDefinitions},
+    EguiContexts, EguiPlugin,
+};
 use rand::Rng;
 use serde::Deserialize;
 
@@ -28,6 +31,17 @@ struct Store {
     score: i32,
 }
 
+/// 游戏状态
+#[derive(Debug, Clone, Eq, PartialEq, Hash, Default, States)]
+enum GameState {
+    #[default]
+    Menu,
+
+    Playing,
+    Paused,
+    GameOver,
+}
+
 fn main() {
     let mut questions: Config = Config {
         questions: Vec::new(),
@@ -41,12 +55,19 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .add_plugin(EguiPlugin)
         .insert_resource(questions)
-        .init_resource::<Store>()
-        .add_startup_system(spawn_question)
-        .add_system(unspawn_question)
-        .add_system(clean_question)
         .insert_resource(FixedTime::new_from_secs(1.0))
-        .add_system(print_info)
+        .init_resource::<Store>()
+        .add_state::<GameState>()
+        .add_system(setup)
+        .add_startup_system(spawn_question)
+        .add_system(render_main_menu.in_set(OnUpdate(GameState::Menu)))
+        .add_system(render_game_over.in_set(OnUpdate(GameState::GameOver)))
+        .add_system(reset_entity.in_schedule(OnExit(GameState::GameOver)))
+        // 游戏中的系统
+        .add_systems(
+            (print_info, clean_question, unspawn_question, game_over)
+                .in_set(OnUpdate(GameState::Playing)),
+        )
         .add_system(spawn_question.in_schedule(CoreSchedule::FixedUpdate))
         .run();
 }
@@ -115,6 +136,70 @@ fn unspawn_question(
     }
 }
 
+/// 渲染主菜单
+fn render_main_menu(mut contexts: EguiContexts, mut state: ResMut<NextState<GameState>>) {
+    egui::Window::new("主菜单").show(contexts.ctx_mut(), |ui| {
+        ui.label("欢迎来到TuxMath");
+        if ui.button("点击开始游戏").clicked() {
+            state.set(GameState::Playing);
+        };
+    });
+}
+
+fn render_game_over(mut contexts: EguiContexts, mut state: ResMut<NextState<GameState>>) {
+    egui::Window::new("游戏结束").show(contexts.ctx_mut(), |ui| {
+        ui.label("游戏结束");
+        if ui.button("点击重新开始").clicked() {
+            state.set(GameState::Playing);
+        };
+    });
+}
+
+/// 游戏结束系统
+fn game_over(mut state: ResMut<NextState<GameState>>, score: ResMut<Store>) {
+    if score.score >= 0 && score.score <= 2 {
+        return;
+    }
+
+    state.set(GameState::GameOver);
+}
+
+// 重置资源
+fn reset_entity(
+    mut score: ResMut<Store>,
+    mut commands: Commands,
+    query: Query<(Entity, &QuestionActual)>,
+) {
+    for (entity, _) in query.iter() {
+        commands.entity(entity).despawn();
+    }
+    score.score = 0;
+}
+
+/// 初始化资源
+fn setup(mut contexts: EguiContexts) {
+    let mut fonts = FontDefinitions::default();
+
+    fonts.font_data.insert(
+        "mao_ken_wang_xing".to_owned(),
+        FontData::from_static(include_bytes!("../assets/font/SourceHanSansCN-Normal.otf")),
+    ); // .ttf and .otf supported
+
+    fonts
+        .families
+        .get_mut(&egui::FontFamily::Proportional)
+        .unwrap()
+        .insert(0, "mao_ken_wang_xing".to_owned());
+
+    // Put my font as last fallback for monospace:
+    fonts
+        .families
+        .get_mut(&egui::FontFamily::Monospace)
+        .unwrap()
+        .push("mao_ken_wang_xing".to_owned());
+
+    contexts.ctx_mut().set_fonts(fonts);
+}
 /**
  * 渲染游戏界面
  */
@@ -124,10 +209,6 @@ fn print_info(
     query: Query<(&DisplayText, &CreationTime)>,
     score: Res<Store>,
 ) {
-    contexts
-        .ctx_mut()
-        .set_fonts(egui::FontDefinitions::default());
-
     egui::Window::new("问题列表").show(contexts.ctx_mut(), |ui| {
         for (text, creation) in query.iter() {
             ui.label(format!(
