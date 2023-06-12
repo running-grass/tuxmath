@@ -1,45 +1,23 @@
-use bevy::{prelude::*, reflect::TypeUuid, utils::BoxedFuture};
+pub mod asset;
+pub mod state;
+
+use bevy::{prelude::*};
 use bevy_egui::{
-    egui::{self, Align2, FontData, FontDefinitions},
+    egui::{self, Align2},
     EguiContexts, EguiPlugin,
 };
 use rand::Rng;
 use serde::Deserialize;
+use state::*;
+use asset::*;
 
-use bevy::asset::{AssetLoader, LoadContext, LoadedAsset};
 
 /**
  * 关卡配置
  */
-#[derive(Debug, Deserialize, Resource, Default, TypeUuid)]
-#[uuid = "a5d6f4c3-6d3e-4f5f-9b9e-8a9d5f5c7d3e"]
+#[derive(Debug, Deserialize, Resource, Default)]
 struct Config {
     questions: Vec<Question>,
-}
-
-#[derive(Resource, Default)]
-struct AssetsLoading(Vec<HandleUntyped>);
-
-#[derive(Default)]
-pub struct CustomAssetLoader;
-
-impl AssetLoader for CustomAssetLoader {
-    fn load<'a>(
-        &'a self,
-        bytes: &'a [u8],
-        load_context: &'a mut LoadContext,
-    ) -> BoxedFuture<'a, Result<(), bevy::asset::Error>> {
-        let config = toml::from_str::<Config>(std::str::from_utf8(bytes).unwrap()).unwrap();
-
-        Box::pin(async move {
-            load_context.set_default_asset(LoadedAsset::new(config));
-            Ok(())
-        })
-    }
-
-    fn extensions(&self) -> &[&str] {
-        &["toml"]
-    }
 }
 
 /**
@@ -55,39 +33,11 @@ struct Question {
  * 记分板
  */
 #[derive(Debug, Default, Resource)]
-struct Store {
+struct Score {
     score: i32,
 }
 
-/**
- * 记分板
- */
-#[derive(Debug, Default, Resource)]
-struct GlobalAssets {
-    config: Handle<Config>,
-}
 
-/// 游戏状态
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Default, States)]
-enum AppState {
-    #[default]
-    Loading,
-
-    MainMenu,
-
-    InGame,
-}
-
-/// 游戏状态
-#[derive(Debug, Clone, Eq, PartialEq, Hash, Default, States)]
-enum GameState {
-    #[default]
-    Idle,
-
-    Playing,
-    Paused,
-    GameOver,
-}
 
 // 全局计时器
 #[derive(Debug, Default, Resource)]
@@ -97,17 +47,14 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_plugin(EguiPlugin)
+        .add_plugin(MyAssetPlugin)
         .insert_resource(GlobalTimer(Timer::from_seconds(5.0, TimerMode::Repeating)))
         .insert_resource(FixedTime::new_from_secs(1.0))
-        .init_resource::<Store>()
-        .init_resource::<GlobalAssets>()
-        .init_resource::<AssetsLoading>()
+        .init_resource::<Score>()
+        .init_resource::<Config>()
         .add_state::<AppState>()
         .add_state::<GameState>()
-        .add_asset::<Config>()
-        .init_asset_loader::<CustomAssetLoader>()
         .add_startup_system(setup)
-        .add_system(check_assets_ready.in_set(OnUpdate(AppState::Loading)))
         .add_system(render_main_menu.in_set(OnUpdate(AppState::MainMenu)))
         .add_system(reset_entity.in_schedule(OnExit(AppState::InGame)))
         // 游戏中的系统
@@ -133,13 +80,10 @@ fn main() {
 fn spawn_question(
     mut commands: Commands,
     time: Res<Time>,
-    global_assets: Res<GlobalAssets>,
-    config_assets: ResMut<Assets<Config>>,
+    config: Res<Config>,
     mut global_timer: ResMut<GlobalTimer>,
 ) {
     if global_timer.0.tick(time.delta()).just_finished() {
-        let config = config_assets.get(&global_assets.config).unwrap();
-
         let index: usize = rand::thread_rng().gen_range(0..config.questions.len()) as usize;
         // 从 question 随机取出一条
         let question = config.questions.get(index).unwrap();
@@ -160,7 +104,7 @@ fn spawn_question(
 fn clean_question(
     mut commands: Commands,
     time: Res<Time>,
-    mut score: ResMut<Store>,
+    mut score: ResMut<Score>,
     mut query: Query<(Entity, &mut QuestionTimer)>,
 ) {
     for (entity, mut timer) in query.iter_mut() {
@@ -180,7 +124,7 @@ fn unspawn_question(
     mut string: Local<String>,
     mut char_evr: EventReader<ReceivedCharacter>,
     query: Query<(Entity, &QuestionActual)>,
-    mut score: ResMut<Store>,
+    mut score: ResMut<Score>,
 ) {
     for ev in char_evr.iter() {
         string.push(ev.char);
@@ -272,7 +216,7 @@ fn render_game_over(mut contexts: EguiContexts, mut state: ResMut<NextState<Game
 }
 
 /// 游戏结束系统
-fn game_over(mut state: ResMut<NextState<GameState>>, score: ResMut<Store>) {
+fn game_over(mut state: ResMut<NextState<GameState>>, score: ResMut<Score>) {
     if score.score >= 0 && score.score <= 2 {
         return;
     }
@@ -292,71 +236,13 @@ fn reset_entity(
         commands.entity(entity).despawn();
     }
 
-    commands.init_resource::<Store>()
+    commands.init_resource::<Score>()
 }
 
 /// 初始化资源
 fn setup(
-    mut contexts: EguiContexts,
-    asset_server: Res<AssetServer>,
-    mut global_assets: ResMut<GlobalAssets>,
-    mut loading: ResMut<AssetsLoading>,
 ) {
-    // 加载配置文件
-    let config_handle: Handle<Config> = asset_server.load("config/config.toml");
-
-    loading.0.push(config_handle.clone_untyped());
-    global_assets.config = config_handle;
-
-    let mut fonts = FontDefinitions::default();
-
-    fonts.font_data.insert(
-        "si_yuan".to_owned(),
-        FontData::from_static(include_bytes!("../assets/font/SourceHanSansCN-Normal.otf")),
-    ); // .ttf and .otf supported
-
-    fonts
-        .families
-        .get_mut(&egui::FontFamily::Proportional)
-        .unwrap()
-        .insert(0, "si_yuan".to_owned());
-
-    // Put my font as last fallback for monospace:
-    fonts
-        .families
-        .get_mut(&egui::FontFamily::Monospace)
-        .unwrap()
-        .push("si_yuan".to_owned());
-
-    contexts.ctx_mut().set_fonts(fonts);
-}
-
-fn check_assets_ready(
-    server: Res<AssetServer>,
-    loading: Res<AssetsLoading>,
-    mut app_state: ResMut<NextState<AppState>>,
-) {
-    use bevy::asset::LoadState;
-
-    match server.get_group_load_state(loading.0.iter().map(|h| h.id())) {
-        LoadState::Failed => {
-            // one of our assets had an error
-        }
-        LoadState::Loaded => {
-            // all assets are now ready
-
-            // this might be a good place to transition into your in-game state
-            app_state.set(AppState::MainMenu);
-
-            // remove the resource to drop the tracking handles
-            // commands.remove_resource::<AssetsLoading>();
-            // (note: if you don't have any other handles to the assets
-            // elsewhere, they will get unloaded after this)
-        }
-        _ => {
-            // NotLoaded/Loading: not fully ready yet
-        }
-    }
+    info!("app setup");
 }
 
 /**
@@ -365,7 +251,7 @@ fn check_assets_ready(
 fn print_info(
     mut contexts: EguiContexts,
     query: Query<(&DisplayText, &QuestionTimer)>,
-    score: Res<Store>,
+    score: Res<Score>,
 ) {
     egui::Window::new("问题列表").show(contexts.ctx_mut(), |ui| {
         for (text, timer) in query.iter() {
