@@ -11,3 +11,6 @@ bevy_egui = "0.20.3"
 rand = "0.8.5"
 serde = "1.0.163"
 toml = "0.7.4"
+
+[dependencies.bevy_render]
+features = ["jpeg", "png"]
