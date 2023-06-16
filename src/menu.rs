@@ -1,13 +1,11 @@
 use bevy::prelude::Image as BevyImage;
 use bevy::prelude::*;
 
-use bevy_egui::egui::widgets::Image;
-use bevy_egui::egui::*;
+use bevy_egui::egui::{self, Align2, ColorImage, Image, TextureHandle};
 use bevy_egui::*;
 
 // 引入state.rs 文件
 use crate::state::*;
-
 pub struct MyMenuPlugin;
 
 impl Plugin for MyMenuPlugin {
@@ -121,11 +119,13 @@ fn render_paused_menu(
         });
 }
 
-fn render_game_over(mut contexts: EguiContexts, mut state: ResMut<NextState<GameState>>) {
+fn render_game_over( mut contexts: EguiContexts, mut state: ResMut<NextState<GameState>>) {
     egui::Window::new("游戏结束").show(contexts.ctx_mut(), |ui| {
         ui.label("游戏结束");
+
         if ui.button("点击重新开始").clicked() {
             state.set(GameState::Playing);
         };
+
     });
 }
