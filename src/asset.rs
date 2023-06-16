@@ -27,7 +27,8 @@ impl Plugin for MyAssetPlugin {
 #[derive(Debug, Default, Resource)]
 pub struct GlobalAssetHandles {
     pub config: Handle<String>,
-    pub font: Handle<Vec<u8>>,
+    pub font_raw: Handle<Vec<u8>>,
+    pub font: Handle<Font>,
 }
 
 #[derive(Resource, Default)]
@@ -100,8 +101,8 @@ fn load_asset(
     loading.0.push(menu_image_handle.clone_untyped());
 
     global_assets.config = config_handle;
-    global_assets.font = font_handle;
-    
+    global_assets.font_raw = font_handle;
+
     menu_handdles.backend_image = menu_image_handle;
 }
 
@@ -109,10 +110,11 @@ fn check_assets_ready(
     mut contexts: EguiContexts,
     server: Res<AssetServer>,
     loading: Res<AssetsLoading>,
-    global_assets: Res<GlobalAssetHandles>,
+    mut global_assets: ResMut<GlobalAssetHandles>,
 
     string_assets: ResMut<Assets<String>>,
     bytes_assets: ResMut<Assets<Vec<u8>>>,
+    mut font_assets: ResMut<Assets<Font>>,
     mut app_state: ResMut<NextState<AppState>>,
 
     mut commands: Commands,
@@ -132,7 +134,12 @@ fn check_assets_ready(
             commands.insert_resource(config);
 
             // 设置UI字体
-            let font = bytes_assets.get(&global_assets.font).unwrap();
+            let font = bytes_assets.get(&global_assets.font_raw).unwrap();
+
+            // 生成一个Font给Bevy使用
+            let font2 = Font::try_from_bytes(font.to_vec()).unwrap();
+            global_assets.font = font_assets.add(font2) as Handle<Font>;
+
             let mut fonts = FontDefinitions::default();
             // font.arr
             fonts

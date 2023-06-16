@@ -108,6 +108,8 @@ fn spawn_question(
     asset_server: Res<AssetServer>,
     mut texture_atlases: ResMut<Assets<TextureAtlas>>,
     mut texture_atlas_handle: Local<Option<Handle<TextureAtlas>>>,
+
+    global_handles: Res<GlobalAssetHandles>,
 ) {
     let texture_atlas_handle = texture_atlas_handle
         .get_or_insert_with(|| {
@@ -127,9 +129,8 @@ fn spawn_question(
         let half_w = WINDOW_WIDTH / 2.0;
 
         // 初始化文字信息
-        let font = asset_server.load("font/SourceHanSansCN-Normal.otf");
         let text_style = TextStyle {
-            font,
+            font: global_handles.font.clone(),
             font_size: 40.0,
             color: Color::BLUE,
             // ..Default::default()
