@@ -43,7 +43,7 @@ jobs:
 
       - name: 构建Wasm
         run: |
-          trunk build --release --public-url /bevy_demo_2048
+          trunk build --release --public-url /
       
       - name: 设置Github Pages
         uses: actions/configure-pages@v3
