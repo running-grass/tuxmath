@@ -3,8 +3,6 @@ name: 部署到Github Page
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch: {}
 
 jobs:
