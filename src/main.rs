@@ -133,7 +133,6 @@ fn spawn_question(
             font: global_handles.font.clone(),
             font_size: 40.0,
             color: Color::BLUE,
-            // ..Default::default()
         };
 
         commands

@@ -1,0 +1,57 @@
+name: 部署到Github Page
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  # Build for wasm
+  build:
+    runs-on: ubuntu-latest
+    # Grant GITHUB_TOKEN the permissions required to make a Pages deployment
+    permissions:
+      pages: write      # to deploy to Pages
+      id-token: write   # to verify the deployment originates from an appropriate source
+      contents: read
+
+    # Deploy to the github-pages environment
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v3
+      - name: 缓存
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-clippy-${{ hashFiles('**/Cargo.toml') }}
+      - name: 安装rust工具链
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: 安装 trunk
+        run: |
+          cargo install trunk && echo 1 || echo 0
+
+      - name: 构建Wasm
+        run: |
+          trunk build --release --public-url /bevy_demo_2048
+      
+      - name: 设置Github Pages
+        uses: actions/configure-pages@v3
+      - name: 构成构建产物
+        uses: actions/upload-pages-artifact@v1
+        with:
+          path: './dist'
+      
+      - name: 部署 GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v2 # or the latest "vX.X.X" version tag for this action
